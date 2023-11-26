@@ -1,0 +1,101 @@
+esphome:
+  name: smart-fan
+
+esp32:
+  board: wemos_d1_mini32
+  framework:
+    type: arduino
+  
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  password: !secret api_password
+
+ota:
+  password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Smart-Fan Fallback Hotspot"
+    password: !secret ap_password
+
+# Custom sensor for rotary encoder
+output:
+  - platform: ledc
+    id: motor_pwm
+    pin: GPIO18
+    frequency: 500 Hz  # Initial frequency
+
+sensor:
+  - platform: rotary_encoder
+    name: "Rotary Encoder"
+    id: rotary_encoder_sensor
+    pin_a: GPIO4
+    pin_b: GPIO5
+    resolution: 1
+    min_value: 0
+    max_value: 20
+    publish_initial_value: true
+    on_value:
+      then:
+        - lambda: |-
+            int val = id(rotary_encoder_sensor).state;
+            if (val == 0) {
+              // Turn off the PWM output when the encoder is at minimum
+              id(motor_pwm).turn_off();
+              ESP_LOGD("custom", "Motor stopped");
+            } else {
+              // Calculate PWM frequency for non-zero encoder positions
+              int pwm_frequency = val * (700 / 20);
+              id(motor_pwm).update_frequency(pwm_frequency);
+              id(motor_pwm).turn_on();
+              // Set the duty cycle to 50%
+              id(motor_pwm).set_level(0.5);
+              ESP_LOGD("custom", "Encoder Value: %d, PWM Frequency: %d Hz", val, pwm_frequency);
+            }
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO27  # Replace GPIOx with the actual GPIO pin number connected to the switch
+      mode: INPUT_PULLUP  # Assuming the switch is active LOW
+    name: "Rotary Encoder Button"
+    on_press:
+      then:
+        - lambda: |-
+            id(rotary_encoder_sensor).publish_state(0);
+            ESP_LOGD("custom", "Rotary encoder counter reset");
+
+i2c:
+  sda: 21
+  scl: 22
+  frequency: 800kHz
+  scan: True
+
+# Use a larger font
+font:
+  - file: "fonts/Roboto-Regular.ttf"
+    id: roboto
+    size: 64  # Adjust the font size as needed
+
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 128x64"
+    address: 0x3C
+    id: my_display
+    lambda: |-
+      if (id(rotary_encoder_sensor).has_state()) {
+        int val = id(rotary_encoder_sensor).state;
+        it.printf(64, 32, id(roboto), TextAlign::CENTER , "%d", val);
+      }
+
+
+captive_portal:
+    
